@@ -571,6 +571,10 @@ window.addEventListener("DOMContentLoaded", async () => {
     showToast(active ? "Daemon auto-switching enabled." : "Daemon auto-switching paused.", "info");
   });
 
+  await listen("hotkey-failed", (event) => {
+    showToast(`Hotkey "${event.payload}" is already in use by another app.`, "error");
+  });
+
   await listen("displays-reset", async () => {
     await refreshDisplays();
     updateActiveProfileBanner(null);

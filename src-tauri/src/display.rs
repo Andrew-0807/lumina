@@ -327,6 +327,20 @@ pub fn apply_gamma(display_id: &str, gamma: f32) -> bool {
 pub fn apply_resolution(display_id: &str, width: u32, height: u32, refresh_rate: u32) -> bool {
     unsafe {
         let u16_name = string_to_u16_vec(display_id);
+
+        // Skip the mode-set if we're already at this resolution. ChangeDisplaySettingsExW
+        // always resets the driver (screen flash) even when the target equals the current
+        // mode, so avoid calling it needlessly on every reset/profile-apply.
+        let mut cur: DEVMODEW = std::mem::zeroed();
+        cur.dmSize = std::mem::size_of::<DEVMODEW>() as u16;
+        if EnumDisplaySettingsW(u16_name.as_ptr(), ENUM_CURRENT_SETTINGS, &mut cur) != 0
+            && cur.dmPelsWidth == width
+            && cur.dmPelsHeight == height
+            && cur.dmDisplayFrequency == refresh_rate
+        {
+            return true;
+        }
+
         let mut dev_mode: DEVMODEW = std::mem::zeroed();
         dev_mode.dmSize = std::mem::size_of::<DEVMODEW>() as u16;
         dev_mode.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT | DM_DISPLAYFREQUENCY;

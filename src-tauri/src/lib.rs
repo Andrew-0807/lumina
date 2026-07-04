@@ -9,7 +9,7 @@ use serde::{Serialize, Deserialize};
 
 use tauri::{AppHandle, Manager, State, Emitter};
 use tauri::menu::{Menu, MenuItem};
-use tauri::tray::{TrayIconBuilder, TrayIconEvent};
+use tauri::tray::{TrayIconBuilder, TrayIconEvent, MouseButton, MouseButtonState};
 
 // DisplaySettings mapping from Conceptual Model
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -55,6 +55,7 @@ pub struct AppState {
     pub default_profile_name: Option<String>,
     pub system_defaults: HashMap<String, DefaultSettings>,
     pub active_profile: Option<String>, // Executable name
+    pub active_is_manual: bool, // true if pinned by hotkey/reset; daemon must not auto-revert it
     pub hotkeys_thread_id: Option<u32>,
 }
 
@@ -281,9 +282,13 @@ fn apply_profile_settings_internal(
     if !system_defaults.contains_key(display_id) {
         let displays = display::get_connected_displays();
         if let Some(d) = displays.iter().find(|x| x.id == display_id) {
+            // current_vibrance is a raw NVAPI DVC level, but apply_vibrance() expects a
+            // 0-100 percent. Convert here so reset round-trips instead of collapsing to ~8%.
+            let range = (d.max_vibrance - d.min_vibrance).max(1);
+            let vibrance_pct = ((d.current_vibrance - d.min_vibrance) * 100) / range;
             system_defaults.insert(display_id.to_string(), DefaultSettings {
                 resolution: d.current_resolution.clone(),
-                vibrance: d.current_vibrance,
+                vibrance: vibrance_pct,
                 gamma: 1.0,
             });
         }
@@ -308,21 +313,41 @@ fn trigger_manual_apply(state: State<'_, SharedState>, display_id: String, setti
     apply_profile_settings_internal(&mut s.system_defaults, &display_id, &settings)
 }
 
-#[tauri::command]
-fn trigger_reset(state: State<'_, SharedState>) -> bool {
-    let mut s = state.0.lock().unwrap();
-    let mut success = true;
-    
-    // Restore defaults for all displays we have captured defaults for
-    for (id, defaults) in s.system_defaults.iter() {
-        success &= display::apply_resolution(id, defaults.resolution.width, defaults.resolution.height, defaults.resolution.refresh_rate);
-        success &= display::apply_vibrance(id, defaults.vibrance);
-        success &= display::apply_gamma(id, defaults.gamma);
+// Reset target: re-apply the user's designated default profile if one exists,
+// otherwise fall back to the captured Windows defaults.
+fn restore_baseline(s: &mut AppState, app_handle: &AppHandle) -> bool {
+    let default_p = s.profiles.iter()
+        .find(|p| p.is_default.unwrap_or(false))
+        .cloned();
+
+    if let Some(dp) = default_p {
+        let mut success = true;
+        for (disp_id, settings) in dp.settings.iter() {
+            success &= apply_profile_settings_internal(&mut s.system_defaults, disp_id, settings);
+        }
+        s.active_profile = Some(dp.friendly_name.clone());
+        s.active_is_manual = true;
+        let _ = app_handle.emit("profile-changed", Some(dp.friendly_name.clone()));
+        success
+    } else {
+        let mut success = true;
+        for (id, defaults) in s.system_defaults.iter() {
+            success &= display::apply_resolution(id, defaults.resolution.width, defaults.resolution.height, defaults.resolution.refresh_rate);
+            success &= display::apply_vibrance(id, defaults.vibrance);
+            success &= display::apply_gamma(id, defaults.gamma);
+        }
+        s.system_defaults.clear();
+        s.active_profile = None;
+        s.active_is_manual = false;
+        let _ = app_handle.emit("profile-changed", None::<String>);
+        success
     }
-    s.system_defaults.clear();
-    s.active_profile = None;
-    
-    success
+}
+
+#[tauri::command]
+fn trigger_reset(app: AppHandle, state: State<'_, SharedState>) -> bool {
+    let mut s = state.0.lock().unwrap();
+    restore_baseline(&mut s, &app)
 }
 
 #[tauri::command]
@@ -337,9 +362,9 @@ fn spawn_daemon(state: Arc<Mutex<AppState>>, app_handle: AppHandle) {
         loop {
             std::thread::sleep(std::time::Duration::from_millis(1000));
 
-            let (is_enabled, profiles, active_profile) = {
+            let (is_enabled, profiles, active_profile, active_is_manual) = {
                 let s = state.lock().unwrap();
-                (s.is_daemon_enabled, s.profiles.clone(), s.active_profile.clone())
+                (s.is_daemon_enabled, s.profiles.clone(), s.active_profile.clone(), s.active_is_manual)
             };
 
             if !is_enabled {
@@ -353,6 +378,7 @@ fn spawn_daemon(state: Arc<Mutex<AppState>>, app_handle: AppHandle) {
                     }
                     s.system_defaults.clear();
                     s.active_profile = None;
+                    s.active_is_manual = false;
                     let _ = app_handle.emit("profile-changed", None::<String>);
                 }
                 continue;
@@ -384,12 +410,14 @@ fn spawn_daemon(state: Arc<Mutex<AppState>>, app_handle: AppHandle) {
                         }
 
                         s.active_profile = Some(profile.executable_name.clone());
+                        s.active_is_manual = false;
                         let _ = app_handle.emit("profile-changed", Some(profile.friendly_name.clone()));
                     }
                 }
                 None => {
-                    // Revert to defaults if a profile was active but no longer matched
-                    if active_profile.is_some() {
+                    // Revert to defaults if a profile was auto-applied but no longer matched.
+                    // Manually pinned profiles (hotkey/reset) must hold and not be reverted here.
+                    if active_profile.is_some() && !active_is_manual {
                         println!("[Daemon] Restoring default display settings...");
                         let mut s = state.lock().unwrap();
                         for (id, defaults) in s.system_defaults.iter() {
@@ -399,6 +427,7 @@ fn spawn_daemon(state: Arc<Mutex<AppState>>, app_handle: AppHandle) {
                         }
                         s.system_defaults.clear();
                         s.active_profile = None;
+                        s.active_is_manual = false;
                         let _ = app_handle.emit("profile-changed", None::<String>);
                     }
                 }
@@ -444,6 +473,8 @@ fn spawn_hotkeys_listener(state: Arc<Mutex<AppState>>, app_handle: AppHandle) {
                 if let Some((mods, vk)) = parse_hotkey(&reset_str) {
                     if RegisterHotKey(0, 1, mods, vk) != 0 {
                         registered.push(1);
+                    } else {
+                        let _ = app_handle.emit("hotkey-failed", format!("Reset ({reset_str})"));
                     }
                 }
 
@@ -451,6 +482,8 @@ fn spawn_hotkeys_listener(state: Arc<Mutex<AppState>>, app_handle: AppHandle) {
                 if let Some((mods, vk)) = parse_hotkey(&daemon_str) {
                     if RegisterHotKey(0, 2, mods, vk) != 0 {
                         registered.push(2);
+                    } else {
+                        let _ = app_handle.emit("hotkey-failed", format!("Daemon ({daemon_str})"));
                     }
                 }
 
@@ -462,6 +495,8 @@ fn spawn_hotkeys_listener(state: Arc<Mutex<AppState>>, app_handle: AppHandle) {
                                 let id = 10 + idx as i32;
                                 if RegisterHotKey(0, id, mods, vk) != 0 {
                                     registered.push(id);
+                                } else {
+                                    let _ = app_handle.emit("hotkey-failed", format!("{} ({hotkey_str})", p.friendly_name));
                                 }
                             }
                         }
@@ -483,14 +518,7 @@ fn spawn_hotkeys_listener(state: Arc<Mutex<AppState>>, app_handle: AppHandle) {
                     if id == 1 {
                         println!("[Hotkeys] Global Reset hotkey pressed.");
                         let mut s = state.lock().unwrap();
-                        for (disp_id, defaults) in s.system_defaults.iter() {
-                            display::apply_resolution(disp_id, defaults.resolution.width, defaults.resolution.height, defaults.resolution.refresh_rate);
-                            display::apply_vibrance(disp_id, defaults.vibrance);
-                            display::apply_gamma(disp_id, defaults.gamma);
-                        }
-                        s.system_defaults.clear();
-                        s.active_profile = None;
-                        let _ = app_handle.emit("profile-changed", None::<String>);
+                        restore_baseline(&mut s, &app_handle);
                         let _ = app_handle.emit("displays-reset", ());
                     } else if id == 2 {
                         let active = {
@@ -533,6 +561,7 @@ fn spawn_hotkeys_listener(state: Arc<Mutex<AppState>>, app_handle: AppHandle) {
                                         apply_profile_settings_internal(&mut s.system_defaults, disp_id, settings);
                                     }
                                     s.active_profile = Some(dp.friendly_name.clone());
+                                    s.active_is_manual = true;
                                     let _ = app_handle.emit("profile-changed", Some(dp.friendly_name.clone()));
                                 } else {
                                     println!("[Hotkeys] Reverting to Windows defaults...");
@@ -544,6 +573,7 @@ fn spawn_hotkeys_listener(state: Arc<Mutex<AppState>>, app_handle: AppHandle) {
                                     }
                                     s.system_defaults.clear();
                                     s.active_profile = None;
+                                    s.active_is_manual = false;
                                     let _ = app_handle.emit("profile-changed", None::<String>);
                                     let _ = app_handle.emit("displays-reset", ());
                                 }
@@ -554,6 +584,7 @@ fn spawn_hotkeys_listener(state: Arc<Mutex<AppState>>, app_handle: AppHandle) {
                                     apply_profile_settings_internal(&mut s.system_defaults, disp_id, settings);
                                 }
                                 s.active_profile = Some(p.friendly_name.clone());
+                                s.active_is_manual = true;
                                 let _ = app_handle.emit("profile-changed", Some(p.friendly_name.clone()));
                             }
                         }
@@ -590,6 +621,7 @@ pub fn run() {
                 default_profile_name,
                 system_defaults: HashMap::new(),
                 active_profile: None,
+                active_is_manual: false,
                 hotkeys_thread_id: None,
             }));
 
@@ -615,6 +647,7 @@ pub fn run() {
                 .icon(app.default_window_icon().unwrap().clone()) // Use app default window icon
                 .tooltip("Lumina Display Controller")
                 .menu(&menu)
+                .show_menu_on_left_click(false) // right-click => menu; left-click => open window
                 .on_menu_event(|app, event| {
                     match event.id.as_ref() {
                         "show" => {
@@ -625,18 +658,28 @@ pub fn run() {
                         }
                         "reset" => {
                             let state: State<'_, SharedState> = app.state();
-                            trigger_reset(state);
+                            let mut s = state.0.lock().unwrap();
+                            restore_baseline(&mut s, app);
                         }
                         "quit" => {
                             let state: State<'_, SharedState> = app.state();
-                            trigger_reset(state);
+                            {
+                                let mut s = state.0.lock().unwrap();
+                                restore_baseline(&mut s, app);
+                            }
                             app.exit(0);
                         }
                         _ => {}
                     }
                 })
                 .on_tray_icon_event(move |_, event| {
-                    if let TrayIconEvent::Click { .. } = event {
+                    // Only left-click opens the window. Right-click must fall through so
+                    // Windows can show the context menu without focus being stolen.
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event {
                         if let Some(window) = app_handle_clone.get_webview_window("main") {
                             let _ = window.show();
                             let _ = window.set_focus();
