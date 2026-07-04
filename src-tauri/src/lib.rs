@@ -428,7 +428,7 @@ fn spawn_hotkeys_listener(state: Arc<Mutex<AppState>>, app_handle: AppHandle) {
             let mut registered_ids = Vec::new();
 
             // Function to perform hotkey registration
-            let mut register_all = |registered: &mut Vec<i32>| {
+            let register_all = |registered: &mut Vec<i32>| {
                 // First unregister existing
                 for id in registered.iter() {
                     UnregisterHotKey(0, *id);

@@ -1,18 +1,20 @@
-use std::ffi::{c_char, c_void, CStr, CString};
+#![allow(non_camel_case_types)]
+
+use std::ffi::{c_char, c_void, CString};
 use std::ptr;
 use std::sync::Mutex;
 use std::path::Path;
 use serde::{Serialize, Deserialize};
 
 // Win32 Imports from windows-sys
-use windows_sys::Win32::Foundation::{BOOL, HANDLE, HWND, CloseHandle};
+use windows_sys::Win32::Foundation::CloseHandle;
 use windows_sys::Win32::Graphics::Gdi::{
     CreateDCW, DeleteDC, EnumDisplayDevicesW, EnumDisplaySettingsW,
-    DISPLAY_DEVICEW, DEVMODEW, HDC,
+    DISPLAY_DEVICEW, DEVMODEW,
     ENUM_CURRENT_SETTINGS, DM_PELSWIDTH, DM_PELSHEIGHT, DM_DISPLAYFREQUENCY,
     ChangeDisplaySettingsExW, CDS_UPDATEREGISTRY
 };
-use windows_sys::Win32::UI::ColorSystem::{SetDeviceGammaRamp, GetDeviceGammaRamp};
+use windows_sys::Win32::UI::ColorSystem::SetDeviceGammaRamp;
 use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     GetForegroundWindow, GetWindowThreadProcessId
