@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lumina Control Center</title>
+  <link rel="stylesheet" href="styles.css" />
+  <script type="module" src="/main.js" defer></script>
+</head>
+<body>
+  <div class="app-container">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <svg class="logo-icon-svg" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M11 21L11.75 14H6.5L13 3L12.25 10H17.5L11 21Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+        </svg>
+        <span class="logo-text">Lumina</span>
+      </div>
+      
+      <nav class="sidebar-nav">
+        <button class="nav-item active" data-target="dashboard">
+          <svg class="nav-icon-svg" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <rect x="2" y="4" width="20" height="12" rx="2" />
+            <line x1="12" y1="16" x2="12" y2="20" />
+            <line x1="8" y1="20" x2="16" y2="20" />
+          </svg>
+          Dashboard
+        </button>
+        <button class="nav-item" data-target="profiles">
+          <svg class="nav-icon-svg" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <line x1="4" y1="8" x2="20" y2="8" />
+            <line x1="4" y1="16" x2="20" y2="16" />
+            <circle cx="9" cy="8" r="3" fill="var(--bg-sidebar)" />
+            <circle cx="15" cy="16" r="3" fill="var(--bg-sidebar)" />
+          </svg>
+          Profiles
+        </button>
+        <button class="nav-item" data-target="settings">
+          <svg class="nav-icon-svg" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
+          Settings
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="daemon-indicator">
+          <div class="indicator-dot" id="daemon-dot"></div>
+          <span id="daemon-status-text">Daemon Active</span>
+        </div>
+        <div class="active-profile-card" id="active-profile-banner" style="display: none;">
+          <div class="active-profile-title">Active Profile</div>
+          <div class="active-profile-name" id="active-profile-name">None</div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Workspace -->
+    <main class="workspace">
+      <!-- Dashboard Panel -->
+      <section class="panel active" id="panel-dashboard">
+        <div class="panel-header">
+          <h2>Display Dashboard</h2>
+          <button class="btn btn-secondary" id="btn-refresh-displays">
+            <svg style="width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2.5" viewBox="0 0 24 24">
+              <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l.73-.73"/>
+            </svg>
+            Refresh
+          </button>
+        </div>
+        <div class="displays-grid" id="displays-container">
+          <!-- Dynamically populated display cards -->
+        </div>
+      </section>
+
+      <!-- Profiles Panel -->
+      <section class="panel" id="panel-profiles">
+        <div class="panel-header">
+          <h2>Application Profiles</h2>
+          <button class="btn btn-primary" id="btn-add-profile">+ Add Profile</button>
+        </div>
+        
+        <div class="profiles-container">
+          <div class="profiles-sidebar">
+            <div class="profiles-list" id="profiles-list">
+              <!-- Dynamically populated profiles list -->
+            </div>
+          </div>
+          <div class="profile-editor" id="profile-editor" style="display: none;">
+            <div class="editor-header">
+              <h3 id="editor-title">Edit Profile</h3>
+              <button class="btn btn-danger btn-sm" id="btn-delete-profile">Delete</button>
+            </div>
+            
+            <form id="profile-form" class="profile-form">
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="profile-friendly-name">Friendly Name</label>
+                  <input type="text" id="profile-friendly-name" placeholder="e.g. Rust Game Mode" required autocomplete="off" />
+                </div>
+                <div class="form-group">
+                  <label for="profile-exe-name">Executable Filename</label>
+                  <input type="text" id="profile-exe-name" placeholder="e.g. RustClient.exe" autocomplete="off" />
+                </div>
+              </div>
+
+              <div class="form-row" style="margin-bottom: 12px;">
+                <div class="form-group checkbox-group">
+                  <input type="checkbox" id="profile-enabled" checked />
+                  <label for="profile-enabled">Enable profile</label>
+                </div>
+                <div class="form-group checkbox-group">
+                  <input type="checkbox" id="profile-is-default" />
+                  <label for="profile-is-default">Default profile</label>
+                </div>
+              </div>
+
+              <div class="form-group" style="margin-bottom: 16px;">
+                <label for="profile-hotkey">Hotkey Trigger (e.g. Ctrl+Alt+1)</label>
+                <input type="text" id="profile-hotkey" placeholder="e.g. Ctrl+Alt+1" autocomplete="off" />
+              </div>
+
+              <div class="display-tabs-header" id="display-tabs-header">
+                <!-- Tabs for each display -->
+              </div>
+
+              <div class="display-tabs-content" id="display-tabs-content">
+                <!-- Settings for each display -->
+              </div>
+
+              <div class="form-actions">
+                <button type="button" class="btn btn-secondary" id="btn-apply-profile-manual">Apply Settings</button>
+                <button type="submit" class="btn btn-primary">Save Profile</button>
+                <button type="button" class="btn btn-secondary" id="btn-cancel-edit">Cancel</button>
+              </div>
+            </form>
+          </div>
+          <div class="profile-editor-placeholder" id="profile-editor-placeholder">
+            <div class="placeholder-icon">
+              <svg style="width:32px;height:32px;fill:none;stroke:currentColor;stroke-width:2" viewBox="0 0 24 24">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+              </svg>
+            </div>
+            <p>Select a profile to edit or create a new one.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Settings Panel -->
+      <section class="panel" id="panel-settings">
+        <div class="panel-header">
+          <h2>Global Settings</h2>
+        </div>
+        <div class="settings-content">
+          <div class="settings-card">
+            <h3>Background Monitor (Daemon)</h3>
+            <p class="settings-desc">When enabled, Lumina automatically monitors your active window and applies your profiles.</p>
+            <div class="settings-row">
+              <span>Enable Auto-Switching</span>
+              <label class="switch">
+                <input type="checkbox" id="toggle-daemon" checked />
+                <span class="slider-round"></span>
+              </label>
+            </div>
+          </div>
+
+          <div class="settings-card">
+            <h3>Emergency Action</h3>
+            <p class="settings-desc">Revert all display resolutions, digital vibrance levels, and gamma settings back to Windows defaults.</p>
+            <button class="btn btn-danger" id="btn-global-reset">Reset All Displays Now</button>
+          </div>
+
+          <div class="settings-card">
+            <h3>Shortcut Bindings</h3>
+            <p class="settings-desc">Global keyboard shortcuts to control Lumina anywhere. Leave blank to disable.</p>
+            <div class="hotkey-row">
+              <label for="global-reset-hotkey">Emergency Reset Hotkey</label>
+              <input type="text" id="global-reset-hotkey" placeholder="e.g. Ctrl+Alt+R" style="width: 150px; text-align: right;" autocomplete="off" />
+            </div>
+            <div class="hotkey-row">
+              <label for="global-daemon-hotkey">Toggle Daemon Hotkey</label>
+              <input type="text" id="global-daemon-hotkey" placeholder="e.g. Ctrl+Alt+D" style="width: 150px; text-align: right;" autocomplete="off" />
+            </div>
+            <div style="display: flex; justify-content: flex-end; margin-top: 12px;">
+              <button class="btn btn-primary btn-sm" id="btn-save-global-settings">Save Hotkeys</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Custom Toast Notification System -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- Custom Modal Dialog System -->
+  <div id="confirm-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-card">
+      <h3 id="confirm-title">Confirm Action</h3>
+      <p id="confirm-message">Are you sure you want to proceed?</p>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="confirm-cancel">Cancel</button>
+        <button class="btn btn-primary" id="confirm-ok">Confirm</button>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

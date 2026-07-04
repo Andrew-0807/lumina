@@ -1,0 +1,42 @@
+# Logs and Caches
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+.eslintcache
+.cache
+
+# Dependencies
+node_modules/
+
+# Production / Build outputs
+dist/
+dist-ssr/
+out/
+build/
+
+# Rust / Tauri compiler artifacts
+src-tauri/target/
+src-tauri/gen/
+
+# Agent and IDE local workspaces
+.agents/
+.claude/
+.gemini/
+.vscode/
+.idea/
+.DS_Store
+tmp/
+*.local
+
+# System/Backup files
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+Thumbs.db
+desktop.ini
