@@ -1,5 +1,7 @@
 <div align="center">
-  
+
+  <img src="src-tauri/icons/128x128.png" width="112" height="112" alt="Lumina logo" />
+
   # _Lumina_
   
   **A Premium, Minimalist Display & Color Controller for Windows**
@@ -56,10 +58,13 @@ Global shortcuts are bound directly via native Win32 messages:
 
 ## 🛠️ Installation & Building
 
-### Pre-built Installers
-Ready-made installers can be compiled directly using the Tauri bundler:
-*   **NSIS Setup Installer (.exe):** [lumina-setup.exe](file:///src-tauri/target/release/bundle/nsis/lumina_0.1.0_x64-setup.exe)
-*   **MSI Installer Package (.msi):** [lumina-installer.msi](file:///src-tauri/target/release/bundle/msi/lumina_0.1.0_x64_en-US.msi)
+### Download
+
+Grab the latest signed installer from the releases page:
+
+> **➡️ [Download the latest release](https://github.com/Andrew-0807/lumina/releases/latest)** (`.msi`)
+
+Once installed, **Lumina updates itself** — it checks GitHub for new releases on launch and installs them automatically, so you only download once.
 
 ### Development Setup
 To run and develop locally:
