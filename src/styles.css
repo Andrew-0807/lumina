@@ -74,10 +74,11 @@ body {
   margin-bottom: 32px;
 }
 
-.logo-icon-svg {
-  width: 20px;
-  height: 20px;
-  fill: var(--accent-color);
+.logo-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+  object-fit: contain;
 }
 
 .logo-text {

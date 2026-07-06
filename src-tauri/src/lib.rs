@@ -295,14 +295,60 @@ fn apply_profile_settings_internal(
     }
 
     let mut success = true;
+    let mut log = format!("apply display_id={display_id}");
     if let Some(r) = &settings.resolution {
-        success &= display::apply_resolution(display_id, r.width, r.height, r.refresh_rate);
+        let ok = display::apply_resolution(display_id, r.width, r.height, r.refresh_rate);
+        log.push_str(&format!(" res={}x{}@{}->{}", r.width, r.height, r.refresh_rate, ok));
+        success &= ok;
     }
     if let Some(v) = settings.vibrance {
-        success &= display::apply_vibrance(display_id, v);
+        let ok = display::apply_vibrance(display_id, v);
+        log.push_str(&format!(" vibrance={v}->{ok}"));
+        success &= ok;
     }
     if let Some(g) = settings.gamma {
-        success &= display::apply_gamma(display_id, g);
+        let ok = display::apply_gamma(display_id, g);
+        log.push_str(&format!(" gamma={g}->{ok}"));
+        success &= ok;
+    }
+    debug_log(&log);
+    success
+}
+
+// ponytail: temp-file debug log so the packaged app (no console) can be diagnosed.
+// Remove once the per-monitor apply issue is resolved.
+fn debug_log(msg: &str) {
+    use std::io::Write;
+    let path = std::env::temp_dir().join("lumina-debug.log");
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        let _ = writeln!(f, "{msg}");
+    }
+}
+
+// Apply every display in a profile with a short settle gap between monitors.
+// Firing display driver calls (mode-set / gamma / NVAPI vibrance) back-to-back
+// on one thread makes the driver silently drop the change for the second
+// monitor; the manual apply path avoids this only because its per-display async
+// IPC round-trips space the calls out. This reproduces that spacing.
+fn apply_profile_all_displays(
+    source: &str,
+    system_defaults: &mut HashMap<String, DefaultSettings>,
+    settings: &HashMap<String, DisplaySettings>,
+) -> bool {
+    let keys: Vec<&String> = settings.keys().collect();
+    debug_log(&format!("apply_all source={source} keys={keys:?}"));
+
+    let mut success = true;
+    for (i, (display_id, s)) in settings.iter().enumerate() {
+        if i > 0 {
+            std::thread::sleep(std::time::Duration::from_millis(80));
+        }
+        let ok = apply_profile_settings_internal(system_defaults, display_id, s);
+        if !ok {
+            println!("[Apply] Display {display_id} failed; retrying once.");
+            std::thread::sleep(std::time::Duration::from_millis(120));
+            success &= apply_profile_settings_internal(system_defaults, display_id, s);
+        }
     }
     success
 }
@@ -321,10 +367,7 @@ fn restore_baseline(s: &mut AppState, app_handle: &AppHandle) -> bool {
         .cloned();
 
     if let Some(dp) = default_p {
-        let mut success = true;
-        for (disp_id, settings) in dp.settings.iter() {
-            success &= apply_profile_settings_internal(&mut s.system_defaults, disp_id, settings);
-        }
+        let success = apply_profile_all_displays("restore_baseline_default", &mut s.system_defaults, &dp.settings);
         s.active_profile = Some(dp.friendly_name.clone());
         s.active_is_manual = true;
         let _ = app_handle.emit("profile-changed", Some(dp.friendly_name.clone()));
@@ -404,10 +447,8 @@ fn spawn_daemon(state: Arc<Mutex<AppState>>, app_handle: AppHandle) {
                     if should_apply {
                         println!("[Daemon] Applying profile: {}", profile.friendly_name);
                         let mut s = state.lock().unwrap();
-                        
-                        for (display_id, settings) in &profile.settings {
-                            apply_profile_settings_internal(&mut s.system_defaults, display_id, settings);
-                        }
+
+                        apply_profile_all_displays("daemon", &mut s.system_defaults, &profile.settings);
 
                         s.active_profile = Some(profile.executable_name.clone());
                         s.active_is_manual = false;
@@ -557,9 +598,7 @@ fn spawn_hotkeys_listener(state: Arc<Mutex<AppState>>, app_handle: AppHandle) {
                                 if let Some(dp) = default_profile {
                                     println!("[Hotkeys] Reverting to designated DEFAULT profile: {}...", dp.friendly_name);
                                     let mut s = state.lock().unwrap();
-                                    for (disp_id, settings) in dp.settings.iter() {
-                                        apply_profile_settings_internal(&mut s.system_defaults, disp_id, settings);
-                                    }
+                                    apply_profile_all_displays("hotkey_revert_default", &mut s.system_defaults, &dp.settings);
                                     s.active_profile = Some(dp.friendly_name.clone());
                                     s.active_is_manual = true;
                                     let _ = app_handle.emit("profile-changed", Some(dp.friendly_name.clone()));
@@ -580,9 +619,7 @@ fn spawn_hotkeys_listener(state: Arc<Mutex<AppState>>, app_handle: AppHandle) {
                             } else {
                                 println!("[Hotkeys] Applying profile: {}...", p.friendly_name);
                                 let mut s = state.lock().unwrap();
-                                for (disp_id, settings) in p.settings.iter() {
-                                    apply_profile_settings_internal(&mut s.system_defaults, disp_id, settings);
-                                }
+                                apply_profile_all_displays("hotkey_apply", &mut s.system_defaults, &p.settings);
                                 s.active_profile = Some(p.friendly_name.clone());
                                 s.active_is_manual = true;
                                 let _ = app_handle.emit("profile-changed", Some(p.friendly_name.clone()));
@@ -597,10 +634,20 @@ fn spawn_hotkeys_listener(state: Arc<Mutex<AppState>>, app_handle: AppHandle) {
     });
 }
 
+async fn check_for_update(app: tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    use tauri_plugin_updater::UpdaterExt;
+    if let Some(update) = app.updater()?.check().await? {
+        // Download + install; app restarts to apply on next launch.
+        update.download_and_install(|_chunk, _total| {}, || {}).await?;
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
@@ -609,6 +656,15 @@ pub fn run() {
         })
         .setup(|app| {
             let app_handle = app.handle();
+
+            // Check GitHub releases for a newer version and self-install on startup.
+            let updater_handle = app_handle.clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) = check_for_update(updater_handle).await {
+                    eprintln!("update check failed: {e}");
+                }
+            });
+
             let config_path = get_config_path(app_handle);
             let (profiles, is_daemon_enabled, reset_hotkey, daemon_hotkey, default_profile_name) = load_config(&config_path);
 

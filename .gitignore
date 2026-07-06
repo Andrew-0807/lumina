@@ -40,3 +40,8 @@ tmp/
 *.sw?
 Thumbs.db
 desktop.ini
+
+# Tauri updater signing key (never commit)
+tmp/
+*.key
+*.key.pub

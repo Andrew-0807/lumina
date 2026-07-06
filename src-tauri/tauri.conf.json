@@ -22,6 +22,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -29,5 +30,13 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEUwRTE2NDM0MDNGQjIxQkQKUldTOUlmc0ROR1RoNEdYc3l5NDdXc0NNSkkrNlpjaXIrZlQ2ZEk2aDM5R3NzV3YxLzRFckZ2dncK",
+      "endpoints": [
+        "https://github.com/Andrew-0807/lumina/releases/latest/download/latest.json"
+      ]
+    }
   }
 }

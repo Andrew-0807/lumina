@@ -22,6 +22,9 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 use windows_sys::Win32::System::Threading::{
     OpenProcess, QueryFullProcessImageNameW, PROCESS_QUERY_LIMITED_INFORMATION
 };
+use windows_sys::Win32::System::Registry::{
+    RegOpenKeyExW, RegQueryValueExW, RegCloseKey, HKEY, HKEY_LOCAL_MACHINE, KEY_READ
+};
 
 // NVAPI Struct definitions
 #[repr(C)]
@@ -158,6 +161,89 @@ fn string_to_u16_vec(s: &str) -> Vec<u16> {
     v
 }
 
+const EDD_GET_DEVICE_INTERFACE_NAME: u32 = 0x00000001;
+
+// Read the monitor's real model name from its EDID in the registry.
+// `interface_path` looks like: \\?\DISPLAY#DELA0C1#5&abc&0&UID4353#{guid}
+fn edid_monitor_name(interface_path: &str) -> Option<String> {
+    let trimmed = interface_path.trim_start_matches("\\\\?\\");
+    let parts: Vec<&str> = trimmed.split('#').collect();
+    if parts.len() < 3 {
+        return None;
+    }
+    let subkey = format!(
+        "SYSTEM\\CurrentControlSet\\Enum\\DISPLAY\\{}\\{}\\Device Parameters",
+        parts[1], parts[2]
+    );
+    let edid = read_registry_binary(&subkey, "EDID")?;
+    parse_edid_name(&edid)
+}
+
+fn read_registry_binary(subkey: &str, value: &str) -> Option<Vec<u8>> {
+    unsafe {
+        let mut hkey: HKEY = 0;
+        let subkey_w = string_to_u16_vec(subkey);
+        if RegOpenKeyExW(HKEY_LOCAL_MACHINE, subkey_w.as_ptr(), 0, KEY_READ, &mut hkey) != 0 {
+            return None;
+        }
+        let value_w = string_to_u16_vec(value);
+        let mut size: u32 = 0;
+        let mut ty: u32 = 0;
+        let r = RegQueryValueExW(hkey, value_w.as_ptr(), ptr::null_mut(), &mut ty, ptr::null_mut(), &mut size);
+        if r != 0 || size == 0 {
+            RegCloseKey(hkey);
+            return None;
+        }
+        let mut buf = vec![0u8; size as usize];
+        let r = RegQueryValueExW(hkey, value_w.as_ptr(), ptr::null_mut(), &mut ty, buf.as_mut_ptr(), &mut size);
+        RegCloseKey(hkey);
+        if r != 0 {
+            return None;
+        }
+        buf.truncate(size as usize);
+        Some(buf)
+    }
+}
+
+// EDID: four 18-byte descriptors at 54/72/90/108; the one tagged 0xFC holds the name.
+fn parse_edid_name(edid: &[u8]) -> Option<String> {
+    if edid.len() < 126 {
+        return None;
+    }
+    for &offset in &[54usize, 72, 90, 108] {
+        let d = &edid[offset..offset + 18];
+        if d[0] == 0 && d[1] == 0 && d[2] == 0 && d[3] == 0xFC {
+            let name: String = d[5..18]
+                .iter()
+                .take_while(|&&b| b != 0x0A)
+                .map(|&b| b as char)
+                .collect();
+            let name = name.trim().to_string();
+            if !name.is_empty() {
+                return Some(name);
+            }
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_edid_name;
+
+    #[test]
+    fn edid_name_from_descriptor() {
+        let mut edid = vec![0u8; 128];
+        // descriptor #2 (offset 72) tagged 0xFC = monitor name "DELL U2720Q"
+        edid[72 + 3] = 0xFC;
+        for (i, b) in b"DELL U2720Q\n".iter().enumerate() {
+            edid[72 + 5 + i] = *b;
+        }
+        assert_eq!(parse_edid_name(&edid).as_deref(), Some("DELL U2720Q"));
+        assert_eq!(parse_edid_name(&vec![0u8; 128]), None); // no name descriptor
+    }
+}
+
 pub fn get_connected_displays() -> Vec<DisplayInfo> {
     let mut displays = Vec::new();
     let nv = get_nvapi().lock().unwrap();
@@ -176,8 +262,33 @@ pub fn get_connected_displays() -> Vec<DisplayInfo> {
             // State flags check: DISPLAY_DEVICE_ACTIVE = 0x00000001
             if (device.StateFlags & 0x00000001) != 0 {
                 let device_name = u16_to_string(&device.DeviceName);
-                let friendly_name = u16_to_string(&device.DeviceString);
                 let is_primary = (device.StateFlags & 0x00000004) != 0; // DISPLAY_DEVICE_PRIMARY_DEVICE = 0x00000004
+
+                // Top-level DeviceString is the adapter (GPU). The real monitor name comes from
+                // its EDID (via the device interface path); fall back to the driver's DeviceString
+                // ("Generic PnP Monitor" when no vendor driver is installed).
+                let mut monitor: DISPLAY_DEVICEW = std::mem::zeroed();
+                monitor.cb = std::mem::size_of::<DISPLAY_DEVICEW>() as u32;
+                let driver_name = if EnumDisplayDevicesW(device.DeviceName.as_ptr(), 0, &mut monitor, 0) != 0 {
+                    u16_to_string(&monitor.DeviceString)
+                } else {
+                    u16_to_string(&device.DeviceString)
+                };
+
+                let mut iface: DISPLAY_DEVICEW = std::mem::zeroed();
+                iface.cb = std::mem::size_of::<DISPLAY_DEVICEW>() as u32;
+                let friendly_name = if EnumDisplayDevicesW(
+                    device.DeviceName.as_ptr(),
+                    0,
+                    &mut iface,
+                    EDD_GET_DEVICE_INTERFACE_NAME,
+                ) != 0
+                {
+                    let path = u16_to_string(&iface.DeviceID);
+                    edid_monitor_name(&path).unwrap_or(driver_name)
+                } else {
+                    driver_name
+                };
 
                 // Get Current Resolution
                 let mut current_res = Resolution { width: 0, height: 0, refresh_rate: 0 };
