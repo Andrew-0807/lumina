@@ -23,8 +23,6 @@
 
 <video src="https://github.com/Andrew-0807/lumina/raw/main/assets/demo.mp4" controls muted width="640"></video>
 
-[▶ Watch the demo](assets/demo.mp4)
-
 </div>
 
 ---
