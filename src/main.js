@@ -62,6 +62,7 @@ function initNavigation() {
         refreshProfilesList();
       } else if (target === "settings") {
         loadGlobalSettings();
+        loadAppVersion();
       }
     });
   });
@@ -519,6 +520,16 @@ function updateActiveProfileBanner(name) {
   }
 }
 
+// Show the app version and wire the manual update check
+async function loadAppVersion() {
+  try {
+    document.getElementById("app-version").textContent =
+      "v" + (await invoke("get_app_version"));
+  } catch (err) {
+    console.error("Failed to load app version:", err);
+  }
+}
+
 // Load global hotkey settings
 async function loadGlobalSettings() {
   try {
@@ -660,6 +671,23 @@ window.addEventListener("DOMContentLoaded", async () => {
     } catch (err) {
       console.error(err);
       showToast("Failed to save global shortcut bindings.", "error");
+    }
+  });
+
+  // Manual update check
+  document.getElementById("btn-check-updates").addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    btn.textContent = "Checking…";
+    try {
+      const result = await invoke("check_updates");
+      showToast(result || "You're on the latest version.", "success");
+    } catch (err) {
+      console.error(err);
+      showToast("Update check failed: " + err, "error");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Check for Updates";
     }
   });
 

@@ -646,6 +646,30 @@ fn spawn_hotkeys_listener(state: Arc<Mutex<AppState>>, app_handle: AppHandle) {
     });
 }
 
+#[tauri::command]
+fn get_app_version() -> &'static str {
+    env!("CARGO_PKG_VERSION")
+}
+
+// Manual update check: reports back so the UI can show the result, unlike the
+// silent startup check.
+#[tauri::command]
+async fn check_updates(app: AppHandle) -> Result<String, String> {
+    use tauri_plugin_updater::UpdaterExt;
+    let updater = app.updater().map_err(|e| e.to_string())?;
+    match updater.check().await.map_err(|e| e.to_string())? {
+        Some(update) => {
+            let v = update.version.clone();
+            update
+                .download_and_install(|_, _| {}, || {})
+                .await
+                .map_err(|e| e.to_string())?;
+            Ok(format!("Update to v{v} installed. Restart Lumina to apply."))
+        }
+        None => Ok(String::new()), // empty = already up to date
+    }
+}
+
 async fn check_for_update(app: tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     use tauri_plugin_updater::UpdaterExt;
     if let Some(update) = app.updater()?.check().await? {
@@ -772,7 +796,9 @@ pub fn run() {
             trigger_reset,
             get_active_profile,
             get_global_settings,
-            save_global_settings
+            save_global_settings,
+            get_app_version,
+            check_updates
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
