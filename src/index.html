@@ -181,8 +181,14 @@
               <label for="global-daemon-hotkey">Toggle Daemon Hotkey</label>
               <input type="text" id="global-daemon-hotkey" placeholder="e.g. Ctrl+Alt+D" style="width: 150px; text-align: right;" autocomplete="off" />
             </div>
+            <div class="hotkey-row" style="align-items: flex-start;">
+              <label for="stealth-detection" style="max-width: 60%;">Stealth Detection
+                <span style="display:block; font-weight:400; opacity:0.6; font-size:0.8em; margin-top:2px;">Detect games via a system snapshot instead of opening a handle to them. Safest for anti-cheat; slightly higher CPU.</span>
+              </label>
+              <input type="checkbox" id="stealth-detection" />
+            </div>
             <div style="display: flex; justify-content: flex-end; margin-top: 12px;">
-              <button class="btn btn-primary btn-sm" id="btn-save-global-settings">Save Hotkeys</button>
+              <button class="btn btn-primary btn-sm" id="btn-save-global-settings">Save Settings</button>
             </div>
           </div>
         </div>

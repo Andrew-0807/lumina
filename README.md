@@ -40,7 +40,7 @@ https://github.com/user-attachments/assets/a77fef4e-8d75-4f9b-b747-2bad77edf1c1
 
 **Lumina** is a lightweight, high-performance display control utility designed for power users and gamers. It consolidates multiple display configuration tools into a single native Tauri app, allowing you to quickly change resolutions, digital vibrance levels, and gamma ramps. 
 
-Lumina works at the driver level (GDI and NVAPI) without injecting code or modifying game memory, making it **100% safe for anti-cheat systems** in competitive titles like *Rust*, *CS2*, and *Valorant*.
+Lumina works at the driver level (GDI and NVAPI) without injecting code or modifying game memory, using the same public display APIs as tools like OBS and MSI Afterburner in competitive titles like *Rust*, *CS2*, and *Valorant*.
 
 ---
 
@@ -110,7 +110,7 @@ To run and develop locally:
 
 ## 🔒 Security & Safe Play
 
-Lumina utilizes Windows system APIs and the official NVIDIA Display Driver wrapper DLL (`nvapi64.dll`). It **does not read or write game memory**, hook into game overlay threads, or modify DirectX/Vulkan frames. This makes it completely invisible to anti-cheat hooks (EAC, BattlEye, Vanguard) and safe to run alongside any competitive game.
+Lumina utilizes Windows system APIs and the official NVIDIA Display Driver wrapper DLL (`nvapi64.dll`). It **does not read or write game memory**, inject DLLs, hook game threads, or modify DirectX/Vulkan frames. Its only interaction with a running game is optionally reading the foreground process name to auto-switch profiles, the same query Task Manager, Discord, and OBS perform. For maximum caution, **Stealth Detection** (in Settings) resolves the process name from a system snapshot so no handle is ever opened against the game.
 
 ---
 

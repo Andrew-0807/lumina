@@ -37,6 +37,8 @@ struct AppConfig {
     pub reset_hotkey: String,
     pub daemon_hotkey: String,
     pub default_profile_name: Option<String>,
+    #[serde(default)]
+    pub stealth_detection: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -56,6 +58,7 @@ pub struct AppState {
     pub system_defaults: HashMap<String, DefaultSettings>,
     pub active_profile: Option<String>, // Executable name
     pub active_is_manual: bool, // true if pinned by hotkey/reset; daemon must not auto-revert it
+    pub stealth_detection: bool, // resolve foreground exe via snapshot, no OpenProcess on the game
     pub hotkeys_thread_id: Option<u32>,
 }
 
@@ -72,7 +75,7 @@ fn get_config_path(app: &AppHandle) -> PathBuf {
 }
 
 // Load config from file
-fn load_config(path: &PathBuf) -> (Vec<AppProfile>, bool, String, String, Option<String>) {
+fn load_config(path: &PathBuf) -> (Vec<AppProfile>, bool, String, String, Option<String>, bool) {
     if path.exists() {
         if let Ok(mut file) = File::open(path) {
             let mut contents = String::new();
@@ -95,12 +98,15 @@ fn load_config(path: &PathBuf) -> (Vec<AppProfile>, bool, String, String, Option
                     let default_profile_name = config.get("default_profile_name")
                         .and_then(|v| serde_json::from_value::<Option<String>>(v.clone()).ok())
                         .flatten();
-                    return (profiles, is_daemon_enabled, reset_hotkey, daemon_hotkey, default_profile_name);
+                    let stealth_detection = config.get("stealth_detection")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    return (profiles, is_daemon_enabled, reset_hotkey, daemon_hotkey, default_profile_name, stealth_detection);
                 }
             }
         }
     }
-    (Vec::new(), true, "Ctrl+Alt+R".to_string(), "Ctrl+Alt+D".to_string(), None)
+    (Vec::new(), true, "Ctrl+Alt+R".to_string(), "Ctrl+Alt+D".to_string(), None, false)
 }
 
 // Save config to file
@@ -111,6 +117,7 @@ fn save_config(
     reset_hotkey: &str,
     daemon_hotkey: &str,
     default_profile_name: Option<String>,
+    stealth_detection: bool,
 ) {
     let config = AppConfig {
         profiles: profiles.clone(),
@@ -118,6 +125,7 @@ fn save_config(
         reset_hotkey: reset_hotkey.to_string(),
         daemon_hotkey: daemon_hotkey.to_string(),
         default_profile_name,
+        stealth_detection,
     };
     if let Ok(contents) = serde_json::to_string_pretty(&config) {
         if let Ok(mut file) = File::create(path) {
@@ -196,6 +204,8 @@ fn get_profiles(state: State<'_, SharedState>) -> Vec<AppProfile> {
 pub struct GlobalSettings {
     pub reset_hotkey: String,
     pub daemon_hotkey: String,
+    #[serde(default)]
+    pub stealth_detection: bool,
 }
 
 #[tauri::command]
@@ -204,6 +214,7 @@ fn get_global_settings(state: State<'_, SharedState>) -> GlobalSettings {
     GlobalSettings {
         reset_hotkey: s.reset_hotkey.clone(),
         daemon_hotkey: s.daemon_hotkey.clone(),
+        stealth_detection: s.stealth_detection,
     }
 }
 
@@ -212,13 +223,14 @@ fn save_global_settings(state: State<'_, SharedState>, settings: GlobalSettings)
     let mut s = state.0.lock().unwrap();
     s.reset_hotkey = settings.reset_hotkey;
     s.daemon_hotkey = settings.daemon_hotkey;
-    
+    s.stealth_detection = settings.stealth_detection;
+
     let profiles_clone = s.profiles.clone();
     let daemon_enabled = s.is_daemon_enabled;
     let reset_hotkey = s.reset_hotkey.clone();
     let daemon_hotkey = s.daemon_hotkey.clone();
     let default_profile_name = s.default_profile_name.clone();
-    save_config(&s.config_path, &profiles_clone, daemon_enabled, &reset_hotkey, &daemon_hotkey, default_profile_name);
+    save_config(&s.config_path, &profiles_clone, daemon_enabled, &reset_hotkey, &daemon_hotkey, default_profile_name, s.stealth_detection);
     
     // Post thread message to reload hotkeys
     if let Some(tid) = s.hotkeys_thread_id {
@@ -244,7 +256,7 @@ fn save_profiles(state: State<'_, SharedState>, profiles: Vec<AppProfile>) -> bo
     let reset_hotkey = s.reset_hotkey.clone();
     let daemon_hotkey = s.daemon_hotkey.clone();
     let default_profile_name = s.default_profile_name.clone();
-    save_config(&s.config_path, &profiles_clone, daemon_enabled, &reset_hotkey, &daemon_hotkey, default_profile_name);
+    save_config(&s.config_path, &profiles_clone, daemon_enabled, &reset_hotkey, &daemon_hotkey, default_profile_name, s.stealth_detection);
     
     // Post thread message to reload hotkeys
     if let Some(tid) = s.hotkeys_thread_id {
@@ -270,7 +282,7 @@ fn set_daemon_active(state: State<'_, SharedState>, active: bool) -> bool {
     let reset_hotkey = s.reset_hotkey.clone();
     let daemon_hotkey = s.daemon_hotkey.clone();
     let default_profile_name = s.default_profile_name.clone();
-    save_config(&s.config_path, &profiles_clone, s.is_daemon_enabled, &reset_hotkey, &daemon_hotkey, default_profile_name);
+    save_config(&s.config_path, &profiles_clone, s.is_daemon_enabled, &reset_hotkey, &daemon_hotkey, default_profile_name, s.stealth_detection);
     true
 }
 
@@ -405,9 +417,9 @@ fn spawn_daemon(state: Arc<Mutex<AppState>>, app_handle: AppHandle) {
         loop {
             std::thread::sleep(std::time::Duration::from_millis(1000));
 
-            let (is_enabled, profiles, active_profile, active_is_manual) = {
+            let (is_enabled, profiles, active_profile, active_is_manual, stealth) = {
                 let s = state.lock().unwrap();
-                (s.is_daemon_enabled, s.profiles.clone(), s.active_profile.clone(), s.active_is_manual)
+                (s.is_daemon_enabled, s.profiles.clone(), s.active_profile.clone(), s.active_is_manual, s.stealth_detection)
             };
 
             if !is_enabled {
@@ -427,7 +439,7 @@ fn spawn_daemon(state: Arc<Mutex<AppState>>, app_handle: AppHandle) {
                 continue;
             }
 
-            let foreground_proc = display::get_foreground_process_name();
+            let foreground_proc = display::get_foreground_process_name(stealth);
             if foreground_proc.is_empty() {
                 continue;
             }
@@ -569,7 +581,7 @@ fn spawn_hotkeys_listener(state: Arc<Mutex<AppState>>, app_handle: AppHandle) {
                             let reset_hotkey = s.reset_hotkey.clone();
                             let daemon_hotkey = s.daemon_hotkey.clone();
                             let default_profile_name = s.default_profile_name.clone();
-                            save_config(&s.config_path, &profiles_clone, s.is_daemon_enabled, &reset_hotkey, &daemon_hotkey, default_profile_name);
+                            save_config(&s.config_path, &profiles_clone, s.is_daemon_enabled, &reset_hotkey, &daemon_hotkey, default_profile_name, s.stealth_detection);
                             s.is_daemon_enabled
                         };
                         println!("[Hotkeys] Global Daemon toggle pressed: {}", active);
@@ -666,7 +678,7 @@ pub fn run() {
             });
 
             let config_path = get_config_path(app_handle);
-            let (profiles, is_daemon_enabled, reset_hotkey, daemon_hotkey, default_profile_name) = load_config(&config_path);
+            let (profiles, is_daemon_enabled, reset_hotkey, daemon_hotkey, default_profile_name, stealth_detection) = load_config(&config_path);
 
             let state = Arc::new(Mutex::new(AppState {
                 config_path,
@@ -678,6 +690,7 @@ pub fn run() {
                 system_defaults: HashMap::new(),
                 active_profile: None,
                 active_is_manual: false,
+                stealth_detection,
                 hotkeys_thread_id: None,
             }));
 

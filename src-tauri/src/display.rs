@@ -7,7 +7,11 @@ use std::path::Path;
 use serde::{Serialize, Deserialize};
 
 // Win32 Imports from windows-sys
-use windows_sys::Win32::Foundation::CloseHandle;
+use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+    CreateToolhelp32Snapshot, Process32FirstW, Process32NextW,
+    PROCESSENTRY32W, TH32CS_SNAPPROCESS,
+};
 use windows_sys::Win32::Graphics::Gdi::{
     CreateDCW, DeleteDC, EnumDisplayDevicesW, EnumDisplaySettingsW,
     DISPLAY_DEVICEW, DEVMODEW,
@@ -471,7 +475,7 @@ pub fn apply_resolution(display_id: &str, width: u32, height: u32, refresh_rate:
     }
 }
 
-pub fn get_foreground_process_name() -> String {
+pub fn get_foreground_process_name(stealth: bool) -> String {
     unsafe {
         let hwnd = GetForegroundWindow();
         if hwnd == 0 {
@@ -482,6 +486,13 @@ pub fn get_foreground_process_name() -> String {
         GetWindowThreadProcessId(hwnd, &mut pid);
         if pid == 0 {
             return String::new();
+        }
+
+        // Stealth: resolve the exe name from a system-wide process snapshot instead of
+        // opening a handle to the game. A kernel anti-cheat sees no OpenProcess against
+        // the protected process; the snapshot is the same read Task Manager performs.
+        if stealth {
+            return exe_name_from_snapshot(pid);
         }
 
         let h_process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
@@ -502,5 +513,32 @@ pub fn get_foreground_process_name() -> String {
         }
 
         String::new()
+    }
+}
+
+// Find a process's exe name by PID via a toolhelp snapshot. Opens no handle to the
+// target process, so it leaves no OpenProcess trace against a protected game.
+fn exe_name_from_snapshot(pid: u32) -> String {
+    unsafe {
+        let snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if snap == INVALID_HANDLE_VALUE {
+            return String::new();
+        }
+        let mut entry: PROCESSENTRY32W = std::mem::zeroed();
+        entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+        let mut name = String::new();
+        if Process32FirstW(snap, &mut entry) != 0 {
+            loop {
+                if entry.th32ProcessID == pid {
+                    name = u16_to_string(&entry.szExeFile);
+                    break;
+                }
+                if Process32NextW(snap, &mut entry) == 0 {
+                    break;
+                }
+            }
+        }
+        CloseHandle(snap);
+        name
     }
 }

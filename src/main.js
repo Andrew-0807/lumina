@@ -525,6 +525,7 @@ async function loadGlobalSettings() {
     const settings = await invoke("get_global_settings");
     document.getElementById("global-reset-hotkey").value = settings.reset_hotkey || "";
     document.getElementById("global-daemon-hotkey").value = settings.daemon_hotkey || "";
+    document.getElementById("stealth-detection").checked = !!settings.stealth_detection;
   } catch (err) {
     console.error("Failed to load global hotkey settings:", err);
   }
@@ -649,12 +650,13 @@ window.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("btn-save-global-settings").addEventListener("click", async () => {
     const resetHotkey = document.getElementById("global-reset-hotkey").value.trim();
     const daemonHotkey = document.getElementById("global-daemon-hotkey").value.trim();
+    const stealthDetection = document.getElementById("stealth-detection").checked;
 
     try {
       await invoke("save_global_settings", {
-        settings: { reset_hotkey: resetHotkey, daemon_hotkey: daemonHotkey }
+        settings: { reset_hotkey: resetHotkey, daemon_hotkey: daemonHotkey, stealth_detection: stealthDetection }
       });
-      showToast("Global shortcut bindings saved successfully.", "success");
+      showToast("Settings saved successfully.", "success");
     } catch (err) {
       console.error(err);
       showToast("Failed to save global shortcut bindings.", "error");
