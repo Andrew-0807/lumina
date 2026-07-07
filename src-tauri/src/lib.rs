@@ -661,12 +661,14 @@ async fn check_updates(app: AppHandle) -> Result<String, String> {
     let updater = app.updater().map_err(|e| e.to_string())?;
     match updater.check().await.map_err(|e| e.to_string())? {
         Some(update) => {
-            let v = update.version.clone();
             update
                 .download_and_install(|_, _| {}, || {})
                 .await
                 .map_err(|e| e.to_string())?;
-            Ok(format!("Update to v{v} installed. Restart Lumina to apply."))
+            // Relaunch into the freshly installed version. Without this the old exe
+            // keeps running (it lives in the tray and never exits on window close),
+            // so the update never actually takes effect. restart() diverges.
+            app.restart();
         }
         None => Ok(String::new()), // empty = already up to date
     }
@@ -675,8 +677,11 @@ async fn check_updates(app: AppHandle) -> Result<String, String> {
 async fn check_for_update(app: tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     use tauri_plugin_updater::UpdaterExt;
     if let Some(update) = app.updater()?.check().await? {
-        // Download + install; app restarts to apply on next launch.
         update.download_and_install(|_chunk, _total| {}, || {}).await?;
+        // Relaunch so the installed version loads. The app minimizes to the tray and
+        // never exits on window close, so without an explicit restart the installer
+        // can't replace the running exe and the update silently never applies.
+        app.restart();
     }
     Ok(())
 }
