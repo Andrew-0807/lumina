@@ -21,9 +21,13 @@
 
 <div align="center">
 
-<video src="https://raw.githubusercontent.com/Andrew-0807/lumina/main/assets/demo.mp4" controls muted width="640">
-  <source src="https://raw.githubusercontent.com/Andrew-0807/lumina/main/assets/demo.mp4" type="video/mp4" />
-</video>
+
+
+https://github.com/user-attachments/assets/dd571940-b1bf-4bd6-92c6-e9e17ab976db
+
+
+
+
 
 </div>
 
