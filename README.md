@@ -111,3 +111,9 @@ To run and develop locally:
 ## 🔒 Security & Safe Play
 
 Lumina utilizes Windows system APIs and the official NVIDIA Display Driver wrapper DLL (`nvapi64.dll`). It **does not read or write game memory**, hook into game overlay threads, or modify DirectX/Vulkan frames. This makes it completely invisible to anti-cheat hooks (EAC, BattlEye, Vanguard) and safe to run alongside any competitive game.
+
+---
+
+## ⚠️ Disclaimer
+
+Lumina is provided **as-is**, with no warranty of any kind. While it operates only through official Windows and NVIDIA display APIs and does not touch game memory, **you use it at your own risk**. The author is **not responsible for any account bans, suspensions, hardware issues, or other consequences** that may result from using this software. Always review the terms of service of any game you play.
