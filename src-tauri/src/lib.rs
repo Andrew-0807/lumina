@@ -423,8 +423,10 @@ fn spawn_daemon(state: Arc<Mutex<AppState>>, app_handle: AppHandle) {
             };
 
             if !is_enabled {
-                // If daemon is disabled, but a profile was active, revert it
-                if active_profile.is_some() {
+                // Daemon disabled: revert only an auto-applied profile. Manually pinned
+                // profiles (hotkey/reset, active_is_manual) must hold, otherwise the loop
+                // wipes a hotkey-applied profile within a second of it being set.
+                if active_profile.is_some() && !active_is_manual {
                     let mut s = state.lock().unwrap();
                     for (id, defaults) in s.system_defaults.iter() {
                         display::apply_resolution(id, defaults.resolution.width, defaults.resolution.height, defaults.resolution.refresh_rate);
