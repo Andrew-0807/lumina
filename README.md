@@ -17,6 +17,18 @@
 
 </div>
 
+## 🎬 Demo
+
+<div align="center">
+
+<video src="https://github.com/Andrew-0807/lumina/raw/main/assets/demo.mp4" controls muted width="640"></video>
+
+[▶ Watch the demo](assets/demo.mp4)
+
+</div>
+
+---
+
 ## Overview
 
 **Lumina** is a lightweight, high-performance display control utility designed for power users and gamers. It consolidates multiple display configuration tools into a single native Tauri app, allowing you to quickly change resolutions, digital vibrance levels, and gamma ramps. 
