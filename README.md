@@ -17,11 +17,13 @@
 
 </div>
 
-## 🎬 Demo
+## 🎬 Showcase
 
 <div align="center">
 
-<video src="https://github.com/Andrew-0807/lumina/raw/main/assets/demo.mp4" controls muted width="640"></video>
+<video src="https://raw.githubusercontent.com/Andrew-0807/lumina/main/assets/demo.mp4" controls muted width="640">
+  <source src="https://raw.githubusercontent.com/Andrew-0807/lumina/main/assets/demo.mp4" type="video/mp4" />
+</video>
 
 </div>
 
