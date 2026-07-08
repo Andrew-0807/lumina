@@ -649,6 +649,22 @@ fn spawn_hotkeys_listener(state: Arc<Mutex<AppState>>, app_handle: AppHandle) {
 }
 
 #[tauri::command]
+fn is_autostart_enabled(app: AppHandle) -> bool {
+    use tauri_plugin_autostart::ManagerExt;
+    app.autolaunch().is_enabled().unwrap_or(false)
+}
+
+#[tauri::command]
+fn set_autostart(app: AppHandle, enable: bool) -> bool {
+    use tauri_plugin_autostart::ManagerExt;
+    if enable {
+        app.autolaunch().enable().is_ok()
+    } else {
+        app.autolaunch().disable().is_ok()
+    }
+}
+
+#[tauri::command]
 fn get_app_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
@@ -691,6 +707,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--minimized"])))
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
@@ -699,6 +716,13 @@ pub fn run() {
         })
         .setup(|app| {
             let app_handle = app.handle();
+
+            let args: Vec<String> = std::env::args().collect();
+            if args.contains(&"--minimized".to_string()) {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.hide();
+                }
+            }
 
             // Check GitHub releases for a newer version and self-install on startup.
             let updater_handle = app_handle.clone();
@@ -805,7 +829,9 @@ pub fn run() {
             get_global_settings,
             save_global_settings,
             get_app_version,
-            check_updates
+            check_updates,
+            is_autostart_enabled,
+            set_autostart
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -21,6 +21,7 @@ let btnCancelEdit;
 let btnApplyManual;
 let btnRefreshDisplays;
 let btnGlobalReset;
+let toggleAutostart;
 let toggleDaemon;
 let daemonDot;
 let daemonStatusText;
@@ -63,6 +64,7 @@ function initNavigation() {
       } else if (target === "settings") {
         loadGlobalSettings();
         loadAppVersion();
+        loadAutostartStatus();
       }
     });
   });
@@ -542,6 +544,17 @@ async function loadGlobalSettings() {
   }
 }
 
+// Load autostart settings status
+async function loadAutostartStatus() {
+  try {
+    const isAutostart = await invoke("is_autostart_enabled");
+    toggleAutostart.checked = isAutostart;
+  } catch (err) {
+    console.error("Failed to load autostart status:", err);
+  }
+}
+
+
 // DOM Setup
 window.addEventListener("DOMContentLoaded", async () => {
   // Elements binding
@@ -556,6 +569,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   btnApplyManual = document.getElementById("btn-apply-profile-manual");
   btnRefreshDisplays = document.getElementById("btn-refresh-displays");
   btnGlobalReset = document.getElementById("btn-global-reset");
+  toggleAutostart = document.getElementById("toggle-autostart");
   toggleDaemon = document.getElementById("toggle-daemon");
   daemonDot = document.getElementById("daemon-dot");
   daemonStatusText = document.getElementById("daemon-status-text");
@@ -570,6 +584,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   await refreshProfilesList();
   await checkDaemonStatus();
   await checkActiveProfile();
+  await loadAutostartStatus();
 
   // Listen to profile switch changes from Rust background thread
   await listen("profile-changed", (event) => {
@@ -604,6 +619,23 @@ window.addEventListener("DOMContentLoaded", async () => {
     await invoke("set_daemon_active", { active });
     updateDaemonStatusUI(active);
     showToast(active ? "Auto-switching active." : "Auto-switching paused.", "info");
+  });
+
+  toggleAutostart.addEventListener("change", async (e) => {
+    const enable = e.target.checked;
+    try {
+      const ok = await invoke("set_autostart", { enable });
+      if (ok) {
+        showToast(enable ? "Autostart with Windows enabled." : "Autostart with Windows disabled.", "success");
+      } else {
+        showToast("Failed to modify autostart settings.", "error");
+        e.target.checked = !enable; // revert
+      }
+    } catch (err) {
+      console.error(err);
+      showToast("Error updating autostart settings: " + err, "error");
+      e.target.checked = !enable; // revert
+    }
   });
 
   btnGlobalReset.addEventListener("click", async () => {
