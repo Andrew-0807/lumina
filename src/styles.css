@@ -353,6 +353,55 @@ select:focus {
   border-color: var(--border-focus);
 }
 
+.custom-res-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.custom-res-row input {
+  width: 100%;
+  min-width: 0;
+  background-color: var(--bg-input);
+  border: 1px solid var(--border-primary);
+  color: var(--text-primary);
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  outline: none;
+}
+
+.custom-res-row input:focus {
+  border-color: var(--border-focus);
+}
+
+.custom-res-row span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.control-hint {
+  color: var(--text-muted);
+  font-size: 11px;
+  margin-top: 6px;
+}
+
+.custom-res-row button {
+  background-color: var(--bg-input);
+  border: 1px solid var(--border-primary);
+  color: var(--text-primary);
+  padding: 8px 14px;
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all var(--transition-speed);
+}
+
+.custom-res-row button:hover {
+  border-color: var(--border-focus);
+}
+
 /* Minimal Slider Styles */
 .slider-container {
   display: flex;

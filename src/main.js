@@ -142,6 +142,16 @@ async function refreshDisplays() {
   }
 }
 
+async function applyResolution(displayId, width, height, refreshRate) {
+  const ok = await invoke("apply_resolution", { displayId, width, height, refreshRate });
+  if (ok) {
+    showToast("Resolution changed.", "success");
+    await refreshDisplays();
+  } else {
+    showToast("That resolution was rejected by the display.", "error");
+  }
+}
+
 // Render display cards on Dashboard
 function renderDisplayCards() {
   displaysContainer.innerHTML = "";
@@ -158,13 +168,23 @@ function renderDisplayCards() {
     // Primary tag
     const primaryTag = d.is_primary ? "<span class='badge'>Primary</span>" : "";
 
-    // Build Resolution options
-    let resOptions = d.supported_resolutions.map(r => {
-      const selected = (r.width === d.current_resolution.width && 
-                        r.height === d.current_resolution.height && 
-                        r.refresh_rate === d.current_resolution.refresh_rate) ? "selected" : "";
-      return `<option value="${r.width}x${r.height}@${r.refresh_rate}" ${selected}>${r.width}x${r.height} @ ${r.refresh_rate}Hz</option>`;
-    }).join("");
+    // Group refresh rates per unique resolution so the two selects stay independent
+    const resMap = new Map();
+    d.supported_resolutions.forEach(r => {
+      const key = `${r.width}x${r.height}`;
+      if (!resMap.has(key)) resMap.set(key, []);
+      resMap.get(key).push(r.refresh_rate);
+    });
+    const curRes = `${d.current_resolution.width}x${d.current_resolution.height}`;
+
+    let resOptions = Array.from(resMap.keys()).map(key =>
+      `<option value="${key}" ${key === curRes ? "selected" : ""}>${key}</option>`
+    ).join("");
+    resOptions += `<option value="custom">Custom…</option>`;
+
+    let rateOptions = (resMap.get(curRes) || []).map(hz =>
+      `<option value="${hz}" ${hz === d.current_resolution.refresh_rate ? "selected" : ""}>${hz} Hz</option>`
+    ).join("");
 
     // Build DVC elements (only if supported by NVAPI)
     const hasDvc = d.max_vibrance > 0;
@@ -205,10 +225,28 @@ function renderDisplayCards() {
       </div>
 
       <div class="control-group">
-        <div class="control-label">Resolution & Refresh Rate</div>
+        <div class="control-label">Resolution</div>
         <select class="res-select" data-display-id="${d.id}">
           ${resOptions}
         </select>
+      </div>
+
+      <div class="control-group">
+        <div class="control-label">Refresh Rate</div>
+        <select class="rate-select" data-display-id="${d.id}">
+          ${rateOptions}
+        </select>
+      </div>
+
+      <div class="control-group custom-res" style="display:none;">
+        <div class="control-label">Custom Resolution</div>
+        <div class="custom-res-row">
+          <input type="number" class="custom-w" placeholder="W" min="1" />
+          <span>×</span>
+          <input type="number" class="custom-h" placeholder="H" min="1" />
+          <button class="custom-apply">Apply</button>
+        </div>
+        <div class="control-hint">Uses the Refresh Rate selected above.</div>
       </div>
 
       ${dvcHtml}
@@ -230,12 +268,54 @@ function renderDisplayCards() {
 
   // Bind change listeners
   document.querySelectorAll(".res-select").forEach(select => {
-    select.addEventListener("change", async (e) => {
+    select.addEventListener("change", (e) => {
       const displayId = e.target.getAttribute("data-display-id");
-      const [res, rate] = e.target.value.split("@");
-      const [w, h] = res.split("x");
-      await invoke("apply_resolution", { displayId, width: parseInt(w), height: parseInt(h), refreshRate: parseInt(rate) });
-      showToast("Resolution changed.", "success");
+      const card = e.target.closest(".display-card");
+      const customBox = card.querySelector(".custom-res");
+      const rateSelect = card.querySelector(".rate-select");
+
+      if (e.target.value === "custom") {
+        customBox.style.display = "";
+        return;
+      }
+      customBox.style.display = "none";
+
+      // Repopulate refresh rates for the chosen resolution, then apply the highest
+      const d = displays.find(x => x.id === displayId);
+      const [w, h] = e.target.value.split("x").map(Number);
+      const rates = d.supported_resolutions
+        .filter(r => r.width === w && r.height === h)
+        .map(r => r.refresh_rate);
+      rateSelect.innerHTML = rates.map(hz => `<option value="${hz}">${hz} Hz</option>`).join("");
+      applyResolution(displayId, w, h, rates[0]);
+    });
+  });
+
+  document.querySelectorAll(".rate-select").forEach(select => {
+    select.addEventListener("change", (e) => {
+      const displayId = e.target.getAttribute("data-display-id");
+      const card = e.target.closest(".display-card");
+      const [w, h] = card.querySelector(".res-select").value.split("x").map(Number);
+      applyResolution(displayId, w, h, parseInt(e.target.value));
+    });
+  });
+
+  document.querySelectorAll(".custom-apply").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      const card = e.target.closest(".display-card");
+      const displayId = card.querySelector(".res-select").getAttribute("data-display-id");
+      const w = parseInt(card.querySelector(".custom-w").value);
+      const h = parseInt(card.querySelector(".custom-h").value);
+      const hz = parseInt(card.querySelector(".rate-select").value);
+      if (!w || !h) {
+        showToast("Enter width and height.", "error");
+        return;
+      }
+      if (!hz) {
+        showToast("Pick a refresh rate above first.", "error");
+        return;
+      }
+      applyResolution(displayId, w, h, hz);
     });
   });
 
@@ -402,14 +482,40 @@ function renderProfileDisplayTabs(profile) {
     const content = document.createElement("div");
     content.className = `display-settings-tab ${d.id === activeProfileTabDisplayId ? "active" : ""}`;
 
-    let resOptions = `<option value="native" ${!setting.resolution ? "selected" : ""}>Keep Native</option>`;
-    resOptions += d.supported_resolutions.map(r => {
-      const selected = (setting.resolution && 
-                        r.width === setting.resolution.width && 
-                        r.height === setting.resolution.height && 
-                        r.refresh_rate === setting.resolution.refresh_rate) ? "selected" : "";
-      return `<option value="${r.width}x${r.height}@${r.refresh_rate}" ${selected}>${r.width}x${r.height} @ ${r.refresh_rate}Hz</option>`;
-    }).join("");
+    // Group refresh rates per unique resolution (same split as the dashboard)
+    const resMap = new Map();
+    d.supported_resolutions.forEach(r => {
+      const key = `${r.width}x${r.height}`;
+      if (!resMap.has(key)) resMap.set(key, []);
+      resMap.get(key).push(r.refresh_rate);
+    });
+    const allRates = [...new Set(d.supported_resolutions.map(r => r.refresh_rate))].sort((a, b) => b - a);
+
+    let selectedKey = "native";
+    let customW = "";
+    let customH = "";
+    const selectedHz = setting.resolution ? setting.resolution.refresh_rate : null;
+    if (setting.resolution) {
+      const key = `${setting.resolution.width}x${setting.resolution.height}`;
+      if (resMap.has(key)) {
+        selectedKey = key;
+      } else {
+        selectedKey = "custom";
+        customW = setting.resolution.width;
+        customH = setting.resolution.height;
+      }
+    }
+
+    let resOptions = `<option value="native" ${selectedKey === "native" ? "selected" : ""}>Keep Native</option>`;
+    resOptions += Array.from(resMap.keys()).map(key =>
+      `<option value="${key}" ${key === selectedKey ? "selected" : ""}>${key}</option>`
+    ).join("");
+    resOptions += `<option value="custom" ${selectedKey === "custom" ? "selected" : ""}>Custom…</option>`;
+
+    const rateList = resMap.get(selectedKey) || allRates;
+    const rateOptions = rateList.map(hz =>
+      `<option value="${hz}" ${hz === selectedHz ? "selected" : ""}>${hz} Hz</option>`
+    ).join("");
 
     const hasDvc = d.max_vibrance > 0;
     const currentVibrance = setting.vibrance !== null ? setting.vibrance : 50;
@@ -427,6 +533,23 @@ function renderProfileDisplayTabs(profile) {
           <select id="profile-res-${idx}">
             ${resOptions}
           </select>
+        </div>
+
+        <div class="form-group">
+          <label>Target Refresh Rate</label>
+          <select id="profile-rate-${idx}" ${selectedKey === "native" ? "disabled" : ""}>
+            ${rateOptions}
+          </select>
+        </div>
+
+        <div class="form-group profile-custom-res-${idx}" style="display: ${selectedKey === "custom" ? "block" : "none"};">
+          <label>Custom Resolution</label>
+          <div class="custom-res-row">
+            <input type="number" id="profile-custom-w-${idx}" placeholder="W" min="1" value="${customW}" />
+            <span>×</span>
+            <input type="number" id="profile-custom-h-${idx}" placeholder="H" min="1" value="${customH}" />
+          </div>
+          <div class="control-hint">Uses the Refresh Rate selected above.</div>
         </div>
 
         ${hasDvc ? `
@@ -459,7 +582,18 @@ function renderProfileDisplayTabs(profile) {
 
     const chkOverride = content.querySelector(`#override-display-${idx}`);
     const divControls = content.querySelector(`.override-controls-${idx}`);
-    
+
+    const resSelect = content.querySelector(`#profile-res-${idx}`);
+    const rateSelect = content.querySelector(`#profile-rate-${idx}`);
+    const customBox = content.querySelector(`.profile-custom-res-${idx}`);
+    resSelect.addEventListener("change", (e) => {
+      const val = e.target.value;
+      rateSelect.disabled = val === "native";
+      customBox.style.display = val === "custom" ? "block" : "none";
+      const rates = resMap.get(val) || allRates;
+      rateSelect.innerHTML = rates.map(hz => `<option value="${hz}">${hz} Hz</option>`).join("");
+    });
+
     chkOverride.addEventListener("change", (e) => {
       divControls.style.display = e.target.checked ? "flex" : "none";
       if (e.target.checked) {
@@ -756,16 +890,16 @@ window.addEventListener("DOMContentLoaded", async () => {
         
         // Resolution
         const resVal = document.getElementById(`profile-res-${idx}`).value;
-        if (resVal !== "native") {
-          const [res, rate] = resVal.split("@");
-          const [w, h] = res.split("x");
-          settings.resolution = {
-            width: parseInt(w),
-            height: parseInt(h),
-            refresh_rate: parseInt(rate)
-          };
-        } else {
+        const rate = parseInt(document.getElementById(`profile-rate-${idx}`).value);
+        if (resVal === "native") {
           settings.resolution = null;
+        } else if (resVal === "custom") {
+          const w = parseInt(document.getElementById(`profile-custom-w-${idx}`).value);
+          const h = parseInt(document.getElementById(`profile-custom-h-${idx}`).value);
+          settings.resolution = (w && h && rate) ? { width: w, height: h, refresh_rate: rate } : null;
+        } else {
+          const [w, h] = resVal.split("x").map(Number);
+          settings.resolution = { width: w, height: h, refresh_rate: rate };
         }
 
         // Vibrance
