@@ -3,29 +3,15 @@
 use std::ffi::{c_char, c_void, CString};
 use std::ptr;
 use std::sync::Mutex;
-use std::path::Path;
 use serde::{Serialize, Deserialize};
 
-// Win32 Imports from windows-sys
-use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
-use windows_sys::Win32::System::Diagnostics::ToolHelp::{
-    CreateToolhelp32Snapshot, Process32FirstW, Process32NextW,
-    PROCESSENTRY32W, TH32CS_SNAPPROCESS,
-};
 use windows_sys::Win32::Graphics::Gdi::{
-    CreateDCW, DeleteDC, EnumDisplayDevicesW, EnumDisplaySettingsW,
+    EnumDisplayDevicesW, EnumDisplaySettingsW,
     DISPLAY_DEVICEW, DEVMODEW,
     ENUM_CURRENT_SETTINGS, DM_PELSWIDTH, DM_PELSHEIGHT, DM_DISPLAYFREQUENCY,
     ChangeDisplaySettingsExW, CDS_UPDATEREGISTRY
 };
-use windows_sys::Win32::UI::ColorSystem::SetDeviceGammaRamp;
 use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
-use windows_sys::Win32::UI::WindowsAndMessaging::{
-    GetForegroundWindow, GetWindowThreadProcessId
-};
-use windows_sys::Win32::System::Threading::{
-    OpenProcess, QueryFullProcessImageNameW, PROCESS_QUERY_LIMITED_INFORMATION
-};
 use windows_sys::Win32::System::Registry::{
     RegOpenKeyExW, RegQueryValueExW, RegCloseKey, HKEY, HKEY_LOCAL_MACHINE, KEY_READ
 };
@@ -416,27 +402,9 @@ pub fn apply_vibrance(display_id: &str, vibrance_percent: i32) -> bool {
     false
 }
 
-pub fn apply_gamma(display_id: &str, gamma: f32) -> bool {
-    unsafe {
-        let u16_name = string_to_u16_vec(display_id);
-        let hdc = CreateDCW(ptr::null(), u16_name.as_ptr(), ptr::null(), ptr::null());
-        if hdc == 0 {
-            return false;
-        }
-
-        let mut ramp = [0u16; 768];
-        for i in 0..256 {
-            let val = (((i as f32 / 255.0).powf(1.0 / gamma)) * 65535.0 + 0.5) as u32;
-            let val = val.max(0).min(65535) as u16;
-            ramp[i] = val;       // Red
-            ramp[i + 256] = val; // Green
-            ramp[i + 512] = val; // Blue
-        }
-
-        let res = SetDeviceGammaRamp(hdc, ramp.as_ptr() as *const _);
-        DeleteDC(hdc);
-        res != 0
-    }
+pub fn apply_gamma(_display_id: &str, _gamma: f32) -> bool {
+    // Disabled SetDeviceGammaRamp to ensure anti-cheat compliance and prevent false positives.
+    true
 }
 
 pub fn apply_resolution(display_id: &str, width: u32, height: u32, refresh_rate: u32) -> bool {
@@ -472,73 +440,5 @@ pub fn apply_resolution(display_id: &str, width: u32, height: u32, refresh_rate:
             ptr::null()
         );
         res == 0
-    }
-}
-
-pub fn get_foreground_process_name(stealth: bool) -> String {
-    unsafe {
-        let hwnd = GetForegroundWindow();
-        if hwnd == 0 {
-            return String::new();
-        }
-
-        let mut pid = 0u32;
-        GetWindowThreadProcessId(hwnd, &mut pid);
-        if pid == 0 {
-            return String::new();
-        }
-
-        // Stealth: resolve the exe name from a system-wide process snapshot instead of
-        // opening a handle to the game. A kernel anti-cheat sees no OpenProcess against
-        // the protected process; the snapshot is the same read Task Manager performs.
-        if stealth {
-            return exe_name_from_snapshot(pid);
-        }
-
-        let h_process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
-        if h_process == 0 {
-            return String::new();
-        }
-
-        let mut buf = [0u16; 260];
-        let mut size = buf.len() as u32;
-        let success = QueryFullProcessImageNameW(h_process, 0, buf.as_mut_ptr(), &mut size);
-        CloseHandle(h_process);
-
-        if success != 0 {
-            let path_str = u16_to_string(&buf[..size as usize]);
-            if let Some(filename) = Path::new(&path_str).file_name() {
-                return filename.to_string_lossy().into_owned();
-            }
-        }
-
-        String::new()
-    }
-}
-
-// Find a process's exe name by PID via a toolhelp snapshot. Opens no handle to the
-// target process, so it leaves no OpenProcess trace against a protected game.
-fn exe_name_from_snapshot(pid: u32) -> String {
-    unsafe {
-        let snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-        if snap == INVALID_HANDLE_VALUE {
-            return String::new();
-        }
-        let mut entry: PROCESSENTRY32W = std::mem::zeroed();
-        entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
-        let mut name = String::new();
-        if Process32FirstW(snap, &mut entry) != 0 {
-            loop {
-                if entry.th32ProcessID == pid {
-                    name = u16_to_string(&entry.szExeFile);
-                    break;
-                }
-                if Process32NextW(snap, &mut entry) == 0 {
-                    break;
-                }
-            }
-        }
-        CloseHandle(snap);
-        name
     }
 }

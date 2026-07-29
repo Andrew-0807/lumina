@@ -267,24 +267,7 @@ fn save_profiles(state: State<'_, SharedState>, profiles: Vec<AppProfile>) -> bo
     true
 }
 
-#[tauri::command]
-fn is_daemon_active(state: State<'_, SharedState>) -> bool {
-    let s = state.0.lock().unwrap();
-    s.is_daemon_enabled
-}
-
-#[tauri::command]
-fn set_daemon_active(state: State<'_, SharedState>, active: bool) -> bool {
-    let mut s = state.0.lock().unwrap();
-    s.is_daemon_enabled = active;
-    
-    let profiles_clone = s.profiles.clone();
-    let reset_hotkey = s.reset_hotkey.clone();
-    let daemon_hotkey = s.daemon_hotkey.clone();
-    let default_profile_name = s.default_profile_name.clone();
-    save_config(&s.config_path, &profiles_clone, s.is_daemon_enabled, &reset_hotkey, &daemon_hotkey, default_profile_name, s.stealth_detection);
-    true
-}
+// Daemon IPC handlers removed following architectural teardown.
 
 fn apply_profile_settings_internal(
     system_defaults: &mut HashMap<String, DefaultSettings>,
@@ -411,85 +394,7 @@ fn get_active_profile(state: State<'_, SharedState>) -> Option<String> {
     s.active_profile.clone()
 }
 
-// Background thread loop for game detection
-fn spawn_daemon(state: Arc<Mutex<AppState>>, app_handle: AppHandle) {
-    std::thread::spawn(move || {
-        loop {
-            std::thread::sleep(std::time::Duration::from_millis(1000));
-
-            let (is_enabled, profiles, active_profile, active_is_manual, stealth) = {
-                let s = state.lock().unwrap();
-                (s.is_daemon_enabled, s.profiles.clone(), s.active_profile.clone(), s.active_is_manual, s.stealth_detection)
-            };
-
-            if !is_enabled {
-                // Daemon disabled: revert only an auto-applied profile. Manually pinned
-                // profiles (hotkey/reset, active_is_manual) must hold, otherwise the loop
-                // wipes a hotkey-applied profile within a second of it being set.
-                if active_profile.is_some() && !active_is_manual {
-                    let mut s = state.lock().unwrap();
-                    for (id, defaults) in s.system_defaults.iter() {
-                        display::apply_resolution(id, defaults.resolution.width, defaults.resolution.height, defaults.resolution.refresh_rate);
-                        display::apply_vibrance(id, defaults.vibrance);
-                        display::apply_gamma(id, defaults.gamma);
-                    }
-                    s.system_defaults.clear();
-                    s.active_profile = None;
-                    s.active_is_manual = false;
-                    let _ = app_handle.emit("profile-changed", None::<String>);
-                }
-                continue;
-            }
-
-            let foreground_proc = display::get_foreground_process_name(stealth);
-            if foreground_proc.is_empty() {
-                continue;
-            }
-
-            // Find matching enabled profile
-            let matched_profile = profiles.iter().find(|p| {
-                p.is_enabled && p.executable_name.eq_ignore_ascii_case(&foreground_proc)
-            });
-
-            match matched_profile {
-                Some(profile) => {
-                    let should_apply = match active_profile {
-                        Some(ref name) => !name.eq_ignore_ascii_case(&profile.executable_name),
-                        None => true,
-                    };
-
-                    if should_apply {
-                        println!("[Daemon] Applying profile: {}", profile.friendly_name);
-                        let mut s = state.lock().unwrap();
-
-                        apply_profile_all_displays("daemon", &mut s.system_defaults, &profile.settings);
-
-                        s.active_profile = Some(profile.executable_name.clone());
-                        s.active_is_manual = false;
-                        let _ = app_handle.emit("profile-changed", Some(profile.friendly_name.clone()));
-                    }
-                }
-                None => {
-                    // Revert to defaults if a profile was auto-applied but no longer matched.
-                    // Manually pinned profiles (hotkey/reset) must hold and not be reverted here.
-                    if active_profile.is_some() && !active_is_manual {
-                        println!("[Daemon] Restoring default display settings...");
-                        let mut s = state.lock().unwrap();
-                        for (id, defaults) in s.system_defaults.iter() {
-                            display::apply_resolution(id, defaults.resolution.width, defaults.resolution.height, defaults.resolution.refresh_rate);
-                            display::apply_vibrance(id, defaults.vibrance);
-                            display::apply_gamma(id, defaults.gamma);
-                        }
-                        s.system_defaults.clear();
-                        s.active_profile = None;
-                        s.active_is_manual = false;
-                        let _ = app_handle.emit("profile-changed", None::<String>);
-                    }
-                }
-            }
-        }
-    });
-}
+// Daemon process scanner has been completely removed to ensure pure manual/hotkey operation and compliance.
 
 // ponytail: using native Win32 message loop thread to intercept global hotkeys dynamically, avoiding additional plugin dependencies.
 fn spawn_hotkeys_listener(state: Arc<Mutex<AppState>>, app_handle: AppHandle) {
@@ -519,9 +424,9 @@ fn spawn_hotkeys_listener(state: Arc<Mutex<AppState>>, app_handle: AppHandle) {
                 }
                 registered.clear();
 
-                let (reset_str, daemon_str, profiles_data) = {
+                let (reset_str, profiles_data) = {
                     let s = state.lock().unwrap();
-                    (s.reset_hotkey.clone(), s.daemon_hotkey.clone(), s.profiles.clone())
+                    (s.reset_hotkey.clone(), s.profiles.clone())
                 };
 
                 // Register Global Reset -> ID 1
@@ -530,15 +435,6 @@ fn spawn_hotkeys_listener(state: Arc<Mutex<AppState>>, app_handle: AppHandle) {
                         registered.push(1);
                     } else {
                         let _ = app_handle.emit("hotkey-failed", format!("Reset ({reset_str})"));
-                    }
-                }
-
-                // Register Global Daemon -> ID 2
-                if let Some((mods, vk)) = parse_hotkey(&daemon_str) {
-                    if RegisterHotKey(0, 2, mods, vk) != 0 {
-                        registered.push(2);
-                    } else {
-                        let _ = app_handle.emit("hotkey-failed", format!("Daemon ({daemon_str})"));
                     }
                 }
 
@@ -575,19 +471,6 @@ fn spawn_hotkeys_listener(state: Arc<Mutex<AppState>>, app_handle: AppHandle) {
                         let mut s = state.lock().unwrap();
                         restore_baseline(&mut s, &app_handle);
                         let _ = app_handle.emit("displays-reset", ());
-                    } else if id == 2 {
-                        let active = {
-                            let mut s = state.lock().unwrap();
-                            s.is_daemon_enabled = !s.is_daemon_enabled;
-                            let profiles_clone = s.profiles.clone();
-                            let reset_hotkey = s.reset_hotkey.clone();
-                            let daemon_hotkey = s.daemon_hotkey.clone();
-                            let default_profile_name = s.default_profile_name.clone();
-                            save_config(&s.config_path, &profiles_clone, s.is_daemon_enabled, &reset_hotkey, &daemon_hotkey, default_profile_name, s.stealth_detection);
-                            s.is_daemon_enabled
-                        };
-                        println!("[Hotkeys] Global Daemon toggle pressed: {}", active);
-                        let _ = app_handle.emit("daemon-changed", active);
                     } else if id >= 10 {
                         let idx = (id - 10) as usize;
                         
@@ -749,9 +632,6 @@ pub fn run() {
                 hotkeys_thread_id: None,
             }));
 
-            // Spawn the scanner daemon thread
-            spawn_daemon(state.clone(), app_handle.clone());
-
             // Spawn the hotkeys listener thread
             spawn_hotkeys_listener(state.clone(), app_handle.clone());
 
@@ -821,8 +701,6 @@ pub fn run() {
             apply_resolution,
             get_profiles,
             save_profiles,
-            is_daemon_active,
-            set_daemon_active,
             trigger_manual_apply,
             trigger_reset,
             get_active_profile,

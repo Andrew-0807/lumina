@@ -6,7 +6,7 @@
   
   **A Premium, Minimalist Display & Color Controller for Windows**
   
-  _An elegant, all-in-one alternative to VibranceGUI, Quick Res Changer, and Gamma Control._
+  _An elegant, open-source utility for managing monitor resolutions and digital vibrance via hotkeys and manual presets._
 
   ---
   
@@ -17,61 +17,40 @@
 
 </div>
 
-## 🎬 Showcase
+## 🎬 Overview
 
-<div align="center">
+**Lumina** is a lightweight, high-performance display control utility for Windows. It consolidates display resolution switching and NVIDIA Digital Vibrance configuration into a clean, modern user interface driven by custom hotkeys and manual profile triggers.
 
-
-
-
-https://github.com/user-attachments/assets/a77fef4e-8d75-4f9b-b747-2bad77edf1c1
-
-
-
-
-
-
-
-</div>
-
----
-
-## Overview
-
-**Lumina** is a lightweight, high-performance display control utility designed for power users and gamers. It consolidates multiple display configuration tools into a single native Tauri app, allowing you to quickly change resolutions, digital vibrance levels, and gamma ramps. 
-
-Lumina works at the driver level (GDI and NVAPI) without injecting code or modifying game memory, using the same public display APIs as tools like OBS and MSI Afterburner in competitive titles like *Rust*, *CS2*, and *Valorant*.
+Lumina operates exclusively through official Windows GDI display APIs (`ChangeDisplaySettingsExW`) and official NVIDIA driver functions (`nvapi64.dll`). It runs purely as an on-demand desktop display management tool with **no background process scanning**.
 
 ---
 
 ## 🎨 Design System: Warm Monochrome
 
 Lumina is designed around a **Premium Utilitarian Minimalist Editorial** theme:
-*   **Warm Charcoal Canvas:** Deep dark theme utilizing soft charcoal bones (`#121214`) instead of cold absolute black.
+*   **Warm Charcoal Canvas:** Deep dark theme utilizing soft charcoal tones (`#121214`) instead of harsh absolute black.
 *   **Crisp Bento Grid:** Responsive flat bento boxes featuring subtle `#2a2a2f` borders.
 *   **Physical Micro-UIs:** Custom keyboard shortcuts represented inside `<kbd>` containers.
-*   **Custom Micro-Animations:** Responsive custom checkboxes, custom Webkit scrollbars, and toast notifications.
+*   **Custom Micro-Animations:** Responsive custom controls, Webkit scrollbars, and toast notifications.
 
 ---
 
 ## ✨ Features
 
-*   **⚡ Native Driver Controls:** Interacts directly with Windows GDI display settings (`ChangeDisplaySettingsExW`, `SetDeviceGammaRamp`) and NVIDIA NVAPI (`NvAPI_SetDVCLevel`) for smooth hardware-level changes.
-*   **🔄 Focus Daemon (Auto-Switching):** Automatically monitors active windows and applies target profiles (e.g. boosting digital vibrance and gamma when *RustClient.exe* is active) and reverts to your defaults when the process loses focus.
-*   **🎹 Dynamic Global Hotkeys:** Set global hotkeys dynamically. Hit your shortcut anywhere to trigger profiles.
-*   **🔀 Toggle Profile Bindings:** Pressing an active profile's shortcut toggles it off, falling back to a designated **`DEFAULT`** profile (e.g. Day mode config) or standard Windows defaults.
-*   **🖱️ Manual Controls:** Apply profiles manually using a quick-apply mini play button on the sidebar list or directly from the editor without turning on background scanner checks.
+*   **⚡ Native Display Controls:** Interacts directly with Windows display settings (`ChangeDisplaySettingsExW`) and NVIDIA NVAPI (`NvAPI_SetDVCLevel`) for smooth hardware-level resolution and color vibrance changes.
+*   **🎹 Dynamic Global Hotkeys:** Bind hotkeys dynamically to switch profiles or reset display settings at any time.
+*   **🔀 Toggle Profile Bindings:** Easily toggle active profiles on and off with custom keyboard shortcuts.
+*   **🖱️ Manual Presets:** Apply display configurations manually on demand via the sidebar or profile editor.
 *   **🔔 Elegant Toast Notifications:** Built-in animated status toasts and confirmation overlays.
 *   **📥 Minimize to Tray:** Hides seamlessly into the Windows system tray on close.
 
 ---
 
-## 🎹 Shortcut Bindings
+## 🎹 Default Shortcut Bindings
 
-Global shortcuts are bound directly via native Win32 messages:
-*   **Emergency Reset:** `<kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>R</kbd>` (Reverts all connected screens back to standard Windows defaults).
-*   **Toggle Daemon:** `<kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>D</kbd>` (Pauses or activates background focus scanner auto-switching).
-*   **Custom Profiles:** Bind any profile to keys like `<kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>1</kbd>` or `<kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>P</kbd>` to toggle them on demand.
+Global shortcuts can be customized or triggered at any time:
+*   **Reset Displays:** `<kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>R</kbd>` (Reverts all connected screens to standard Windows defaults).
+*   **Custom Profiles:** Bind any display profile to shortcuts like `<kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>1</kbd>` to switch on demand.
 
 ---
 
@@ -79,14 +58,13 @@ Global shortcuts are bound directly via native Win32 messages:
 
 ### Download
 
-Grab the latest signed installer from the releases page:
+Grab the latest installer from the releases page:
 
 > **➡️ [Download the latest release](https://github.com/Andrew-0807/lumina/releases/latest)** (`.msi`)
 
-Once installed, **Lumina updates itself** — it checks GitHub for new releases on launch and installs them automatically, so you only download once.
-
 ### Development Setup
-To run and develop locally:
+
+To build and run locally:
 
 1.  Clone the repository:
     ```bash
@@ -108,12 +86,13 @@ To run and develop locally:
 
 ---
 
-## 🔒 Security & Safe Play
+## 🔒 Security & Safe Operation
 
-Lumina utilizes Windows system APIs and the official NVIDIA Display Driver wrapper DLL (`nvapi64.dll`). It **does not read or write game memory**, inject DLLs, hook game threads, or modify DirectX/Vulkan frames. Its only interaction with a running game is optionally reading the foreground process name to auto-switch profiles, the same query Task Manager, Discord, and OBS perform. For maximum caution, **Stealth Detection** (in Settings) resolves the process name from a system snapshot so no handle is ever opened against the game.
+* **No Background Process Polling:** Lumina contains zero background process scanners or process handle queries (`OpenProcess`). It runs purely as an on-demand, hotkey-driven utility.
+* **Standard APIs:** All display modifications use standard Windows GDI and official NVIDIA driver DLL interfaces (`nvapi64.dll`).
 
 ---
 
-## ⚠️ Disclaimer
+## 📄 License
 
-Lumina is provided **as-is**, with no warranty of any kind. While it operates only through official Windows and NVIDIA display APIs and does not touch game memory, **you use it at your own risk**. The author is **not responsible for any account bans, suspensions, hardware issues, or other consequences** that may result from using this software. Always review the terms of service of any game you play.
+Lumina is released under the [MIT License](LICENSE).
